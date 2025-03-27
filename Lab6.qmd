@@ -1,0 +1,8 @@
+---
+title: "Lab6.qmd"
+author: "Bailey Stender"
+format: html
+editor: visual
+---
+
+## 
