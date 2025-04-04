@@ -1,6 +1,6 @@
 ---
 project:
-  title: "Lab6.qmd"
+  title: "csu-ess-lab6"
   author: "Bailey Stender"
   output-dir: Docs
   type: website
@@ -65,6 +65,7 @@ ggplot(data = camels, aes(x = gauge_lon, y = gauge_lat)) +
 ```
 
 ```{r}
+library(patchwork)
 
 p1 <- ggplot(data = camels, aes(x = gauge_lon, y = gauge_lat)) +
   borders("state", colour = "gray50") +
