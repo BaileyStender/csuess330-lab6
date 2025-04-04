@@ -19,7 +19,11 @@ library(vip)
 library(baguette)
 ```
 
+
+
 ##Q1
+
+
 ```{r}
 root  <- 'https://gdex.ucar.edu/dataset/camels/file'
 ```
@@ -53,9 +57,13 @@ camels <- map(local_files, read_delim, show_col_types = FALSE)
 camels <- power_full_join(camels ,by = 'gauge_id')
 ```
 
+
+
 ##Question 1: From the doccumentation PDF, zero_q_freq means frequency of days with Q = 0 mm/day. Q means discharge. 
 
 ##Q2
+
+
 ```{r}
 ggplot(data = camels, aes(x = gauge_lon, y = gauge_lat)) +
   borders("state", colour = "gray50") +
@@ -86,7 +94,11 @@ p1 + p2 + plot_layout(ncol = 2)
 
 ```
 
+
+
 ##Q3
+
+
 
 ```{r}
 camels |> 
@@ -200,7 +212,11 @@ test_data$lm_pred <- predict(lm_base, newdata = test_data)
 metrics(test_data, truth = logQmean, estimate = lm_pred)
 ```
 
+
+
 #A: Linear Regression Model Workflow
+
+
 
 ```{r}
 
@@ -230,7 +246,11 @@ ggplot(lm_data, aes(x = logQmean, y = .pred, colour = aridity)) +
 
 ```
 
+
+
 #B: Random forest model workflow
+
+
 
 ```{r}
 
@@ -258,7 +278,11 @@ ggplot(rf_data, aes(x = logQmean, y = .pred, colour = aridity)) +
 ```
 
 
+
+
 #C: Build a xgboost (engine) regression (mode) model using boost_tree
+
+
 
 ```{r}
 
@@ -291,7 +315,11 @@ ggplot(xgb_data, aes(x = logQmean, y = .pred, colour = aridity)) +
 
 ```
 
+
+
 ##D: Build a neural network model using the nnet engine from the baguette package using the bag_mlp function
+
+
 
 ```{r}
 
@@ -323,7 +351,11 @@ ggplot(nn_data, aes(x = logQmean, y = .pred, colour = aridity)) +
 
 ```
 
+
+
 #E: Workflows set
+
+
 
 ```{r}
 wf <- workflow_set(list(rec), list(lm_model, rf_model, nn_model, xgb_model)) %>%
@@ -334,10 +366,14 @@ autoplot(wf)
 rank_results(wf, rank_metric = "rsq", select_best = TRUE)
 ```
 
+
+
 #F: The model that performs the best for this dataset is the bag_mlp function because it has the lowest Root mean squared error and highest root squared. 
 
 
 #Q4: Build Your Own
+
+
 
 ```{r}
 library(tidyverse)
@@ -415,7 +451,11 @@ rank_results(wf2, rank_metric = "rsq", select_best = TRUE)
 
 ```
 
+
+
 ## I believe the best model is the rand_forest model because it had the highest r-squared value and lowest root mean squared error.
+
+
 
 
 ```{r}
@@ -439,7 +479,10 @@ ggplot(rf_data2, aes(x = logQmean, y = .pred, colour = aridity)) +
 
 ```
 
+
+
 ## The results correlate with the results from the workflow set comparison because the model is pretty good at predicting with the r-squared value of 0.7111, but the model could be better. The points are sort of scattered near the lower section.
+
 
 
 
