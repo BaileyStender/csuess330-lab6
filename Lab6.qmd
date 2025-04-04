@@ -437,7 +437,7 @@ ggplot(rf_data2, aes(x = logQmean, y = .pred, colour = aridity)) +
 
 ```
 
-## The results correlate with the results from the workflow set comparison because the model is pretty good at predicting with the r-squared value of 0.7111, but the model could be better. The points are sort of scattered near the bottom.
+## The results correlate with the results from the workflow set comparison because the model is pretty good at predicting with the r-squared value of 0.7111, but the model could be better. The points are sort of scattered near the lower section.
 
 
 
