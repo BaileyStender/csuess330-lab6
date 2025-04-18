@@ -1,0 +1,310 @@
+---
+project:
+  title: "hyperparameter-tuning.qmd"
+  author: "Bailey Stender"
+  output-dir: Docs
+  type: website
+format:
+  html:
+    self-contained: true
+editor: visual
+---
+
+#Load Libraries, Read in Data, Clean Data
+```{r}
+#Load Libraries
+library(tidyverse)
+library(powerjoin)
+library(glue)
+library(vip)
+library(baguette)
+library(tidymodels)
+library(ggplot2)
+library(ggthemes)
+library(ranger)
+library(xgboost)
+library(dplyr)
+library(skimr)
+library(visdat)
+library(rsample)
+library(parsnip)
+library(workflowsets)
+library(workflows)
+library(tune)
+library(patchwork)
+library(janitor)
+
+#Read in data
+root  <- 'https://gdex.ucar.edu/dataset/camels/file'
+download.file('https://gdex.ucar.edu/dataset/camels/file/camels_attributes_v2.0.pdf', 
+              'data/camels_attributes_v2.0.pdf')
+types <- c("clim", "geol", "soil", "topo", "vege", "hydro")
+remote_files  <- glue('{root}/camels_{types}.txt')
+local_files   <- glue('data/camels_{types}.txt')
+
+walk2(remote_files, local_files, download.file, quiet = TRUE)
+
+camels <- map(local_files, read_delim, show_col_types = FALSE)
+camels <- power_full_join(camels ,by = 'gauge_id')
+
+glimpse(camels)
+skim(camels)
+
+vis_dat(camels)
+vis_miss(camels)
+
+#Clean data
+clean_data <- camels %>%
+  janitor::clean_names() %>%
+  drop_na() %>%
+  filter(!is.na(gauge_lat) & !is.na(gauge_lon))
+```
+
+```{r}
+#Plot clean data
+ggplot(data = clean_data, aes(x = gauge_lon, y = gauge_lat)) + 
+  borders("state", colour = "gray50") +
+  geom_point(aes(color = q_mean)) +
+  scale_color_gradient(low = "pink", high = "dodgerblue") +
+  ggthemes::theme_map()
+```
+
+#Data Spliting
+```{r}
+
+set.seed(123)
+
+data_split <- initial_split(clean_data, prop = 0.80)
+train_data <- training(data_split)
+test_data <- testing(data_split)
+```
+
+#Feature Engineering
+```{r}
+
+q_recipe <- recipe(q_mean ~ ., data= train_data) %>%
+  step_rm(gauge_lat, gauge_lon) %>%
+  step_dummy(all_nominal_predictors(), -all_outcomes()) %>%
+  step_impute_median(all_numeric_predictors(), -all_outcomes()) %>%
+  step_normalize(all_numeric_predictors())
+
+prepped_recipe <- prep(q_recipe)
+baked_train <- bake(prepped_recipe, new_data = NULL)
+```
+
+#Build resamples
+```{r}
+
+set.seed(123)
+folds <- vfold_cv(train_data, v = 10)
+folds
+```
+
+#Build 3 Candidate Models
+```{r}
+
+linear_spec <- linear_reg() %>%
+  set_engine("lm") %>%
+  set_mode("regression")
+
+rf_spec <- rand_forest(mtry = 3, trees = 500, min_n = 5) %>%
+  set_engine("ranger") %>%
+  set_mode("regression")
+
+boost_spec <- boost_tree(
+  trees = 1000,
+  tree_depth = 6,
+  learn_rate = 0.01,
+  loss_reduction = 0.01
+  ) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+```
+
+#Test the models
+```{r}
+
+model_list <- list(
+  linear_reg = linear_spec,
+  randome_forest = rf_spec,
+  boosted_tree = boost_spec)
+
+workflow_set <- workflow_set(
+  preproc = list(q_recipe),
+  models = model_list)
+
+workflow_results <- workflow_map(
+  workflow_set,
+  resamples = folds,
+  metrics = metric_set(rmse, rsq),
+  control = control_resamples(save_pred = TRUE)
+)
+
+autoplot(workflow_results)
+
+```
+
+#Model Selection
+```{r}
+
+collect_metrics(workflow_results)
+```
+
+#Based on the visualized metrics, select a model that you think best performs. Desribe the reason for your choice using the metrics
+#A: The model I think performs the best is definetely boost tree. It has almost perfect metrics.The r-squared value is very close to 1 (0.98) and has a very low root mean standard error of 0.22. Both of these indicate the model's predictions are very close to the actual observed values.
+
+#Describe the model you selected. What is the model type, engine, and mode. Why do you think it is performing well for this problem?
+#A: The model type is boost_tree, the engine is xgboost, and the mode is regression. I think the model might be performing well for this problem because hydroloic processes can be non-linear and complex, something XGboost is good at modeling.This model recognizes the complexity of hydrolic procecess without overfitting or needing much manual feature design.
+
+
+
+#Model Tuning
+#Build a model for you chosen specification
+```{r}
+tuned_boost_spec <- boost_tree(
+  trees = 1000,
+  tree_depth = tune(),
+  learn_rate = tune(),
+  loss_reduction = tune ()
+) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+```
+
+#Create a workflow
+```{r}
+
+tuned_boost_workflow <- workflow() %>%
+  add_model(tuned_boost_spec) %>%
+  add_recipe(q_recipe)
+```
+
+#Check the Tunable Values/Ranges
+```{r}
+
+dials <- extract_parameter_set_dials(tuned_boost_workflow)
+dials$object
+
+```
+
+#Define the search space
+```{r}
+my.grid <- grid_space_filling(
+  x = dials,
+  size = 25
+)
+
+my.grid
+```
+
+#Tune the model
+```{r}
+
+model_params <- tune_grid(
+  tuned_boost_workflow,
+  resamples = folds,
+  grid = my.grid,
+  metrics = metric_set(rmse, rsq, mae),
+  control = control_grid(save_pred = TRUE)
+)
+
+autoplot(model_params)
+```
+
+#Describe what you see!
+
+
+#Check the skill of the tuned model
+```{r}
+
+collect_metrics(model_params) %>%
+  arrange(mean)
+
+show_best(model_params, metric = "mae", n = 5)
+
+hp_best <- select_best(model_params, metric = "mae")
+
+```
+#Use the collect_metrics() function to check the skill of the tuned model. Describe what you see, remember dplyr functions like arrange, slice_*, and filter will work on this tibble.
+#Please interpret the results of the first row of show_best(). What do you see? What hyperparameter set is best for this model, based on MAE?
+
+#Finalize Model
+```{r}
+
+final_wf <- finalize_workflow(
+  tuned_boost_workflow,
+  hp_best
+)
+```
+
+#Final Model Verification
+```{r}
+
+final_fit <- last_fit(
+  final_wf,
+  split = data_split
+)
+
+collect_metrics(final_fit)
+
+final_preds <- collect_predictions(final_fit)
+
+```
+
+```{r}
+
+ggplot(final_preds, aes(x = .pred, y = q_mean)) +
+  geom_point(aes(color = q_mean), alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed") +
+  geom_abline(slope = 1, intercept = 0, color = "navy", linetype = "solid") +
+  scale_color_viridis_c(option = "plasma") +
+  labs(
+    title = "Predicted vs. Actual q_mean on Test Set",
+    x = "Predicted q_mean",
+    y = "Actual q_mean",
+    color = "True q_mean"
+  ) +
+  theme_minimal()
+```
+#Interpret these results. How does the final model perform on the test data? Is it better or worse than the training data? Use your knowledge of the regression based metrics to describe the results.
+
+#Building a map
+```{r}
+final_model <- fit(final_wf, data = clean_data)
+
+pred_data <- augment(final_model, new_data = clean_data)
+
+pred_data <- pred_data %>%
+  mutate(residual_sq = (q_mean - .pred)^2)
+
+library(ggplot2)
+library(ggthemes)
+library(dplyr)
+library(maps)
+
+states_map <- map_data("state")
+
+map_preds <- ggplot() +
+  geom_polygon(data = states_map, aes(x = long, y = lat, group = group),
+               fill = "white", color = "gray56") +
+  geom_point(data = pred_data, aes(x = gauge_lon, y = gauge_lat, color = .pred)) +
+  scale_color_gradient(low = "orange", high = "purple") +
+  ggthemes::theme_map() +
+  labs(title = "Predicted q_mean Across CONUS", color = "Predicted q_mean")
+```
+
+```{r}
+
+map_resid <- ggplot(data = pred_data, aes(x = gauge_lon, y = gauge_lat)) +
+  borders("state", colour = "gray50") +
+  geom_point(aes(color = residual_sq)) +
+  scale_color_gradient(low = "orange", high = "purple") +
+  ggthemes::theme_map() +
+  labs(title = "Squared Residuals Across CONUS", color = "Residuals^2")
+```
+
+```{r}
+map_preds + map_resid + plot_layout(ncol =2)
+```
+
+
